@@ -13,9 +13,9 @@ from telegram.ext import (
 
 # Configuración desde Variables de Entorno de Railway
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-ADMIN_ID = os.getenv("ADMIN_ID")  # Tu ID numérico de Telegram para recibir los TXT
+ADMIN_ID = os.getenv("ADMIN_ID")  # Tu ID numérico de Telegram
 
-# Ruta persistente en Railway (se almacena en un Volume montado en /app/data)
+# Ruta persistente en Railway
 DATA_DIR = os.getenv("DATA_DIR", "./data")
 os.makedirs(DATA_DIR, exist_ok=True)
 ARCHIVO_USUARIOS = os.path.join(DATA_DIR, "usuarios.txt")
@@ -97,6 +97,23 @@ def descontar_creditos_usuario(user_id: int, cantidad: float) -> float:
     return 0.0
 
 
+def modificar_creditos(target_id: int, cantidad: float, operacion: str) -> tuple[bool, float, str]:
+    """Suma o resta créditos a un usuario por su ID y devuelve estado, nuevo saldo y username."""
+    usuarios = cargar_usuarios()
+    if target_id not in usuarios:
+        return False, 0.0, ""
+    
+    saldo_actual = usuarios[target_id]["creditos"]
+    if operacion == "add":
+        nuevo_saldo = saldo_actual + cantidad
+    elif operacion == "rem":
+        nuevo_saldo = max(0.0, saldo_actual - cantidad)
+    
+    usuarios[target_id]["creditos"] = nuevo_saldo
+    guardar_usuarios(usuarios)
+    return True, nuevo_saldo, usuarios[target_id]["username"]
+
+
 def procesar_texto(texto: str) -> list[str]:
     tarjetas_encontradas = []
 
@@ -154,6 +171,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mensaje = (
         f"<b>¡Bienvenido al Bot Limpiador de Tarjetas!</b> 🤖\n\n"
         f"👤 <b>Usuario:</b> @{user.username if user.username else 'SinUsername'}\n"
+        f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
         f"💳 <b>Créditos disponibles:</b> <code>{creditos:g}</code>\n\n"
         f"Puedes enviar tu archivo <b>.txt</b> directamente al chat en cualquier momento, "
         f"o usar el menú interactivo:"
@@ -173,9 +191,105 @@ async def cmd_creditos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     creditos = obtener_creditos_usuario(user.id, user.username or "SinUsername")
     await update.message.reply_text(
+        f"👤 <b>Usuario:</b> @{user.username if user.username else 'SinUsername'}\n"
+        f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
         f"💳 <b>Tus créditos actuales:</b> <code>{creditos:g}</code>",
         parse_mode="HTML",
     )
+
+
+# --- COMANDOS SOLO PARA ADMINISTRADOR ---
+
+async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if not ADMIN_ID or str(user.id) != str(ADMIN_ID):
+        return  # Ignorar si no es el administrador
+
+    if len(context.args) < 2:
+        await update.message.reply_text("⚠️️ <b>Uso correcto:</b> <code>/add [ID_USUARIO] [CANTIDAD]</code>", parse_mode="HTML")
+        return
+
+    try:
+        target_id = int(context.args[0])
+        cantidad = float(context.args[1])
+    except ValueError:
+        await update.message.reply_text("❌ El ID y la cantidad deben ser números válidos.")
+        return
+
+    exito, nuevo_saldo, username = modificar_creditos(target_id, cantidad, "add")
+
+    if exito:
+        await update.message.reply_text(
+            f"✅ <b>Créditos agregados con éxito</b>\n\n"
+            f"👤 <b>Usuario:</b> @{username}\n"
+            f"🆔 <b>ID:</b> <code>{target_id}</code>\n"
+            f"➕ <b>Agregado:</b> <code>{cantidad:g}</code>\n"
+            f"💳 <b>Nuevo Saldo:</b> <code>{nuevo_saldo:g}</code>",
+            parse_mode="HTML"
+        )
+        # Notificar al usuario objetivo
+        try:
+            await context.bot.send_message(
+                chat_id=target_id,
+                text=(
+                    f"🎉 <b>¡TUS CRÉDITOS HAN SIDO ACTUALIZADOS!</b>\n\n"
+                    f"👤 <b>Usuario:</b> @{username}\n"
+                    f"🆔 <b>ID:</b> <code>{target_id}</code>\n"
+                    f"➕ <b>Créditos recibidos:</b> <code>{cantidad:g}</code>\n"
+                    f"💳 <b>Saldo total disponible:</b> <code>{nuevo_saldo:g}</code>"
+                ),
+                parse_mode="HTML"
+            )
+        except Exception:
+            await update.message.reply_text("⚠️ Se actualizaron los créditos pero no se pudo notificar al usuario (bot bloqueado o chat no iniciado).")
+    else:
+        await update.message.reply_text("❌ El ID de usuario no existe en la base de datos.")
+
+
+async def cmd_rem(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if not ADMIN_ID or str(user.id) != str(ADMIN_ID):
+        return  # Ignorar si no es el administrador
+
+    if len(context.args) < 2:
+        await update.message.reply_text("⚠️ <b>Uso correcto:</b> <code>/rem [ID_USUARIO] [CANTIDAD]</code>", parse_mode="HTML")
+        return
+
+    try:
+        target_id = int(context.args[0])
+        cantidad = float(context.args[1])
+    except ValueError:
+        await update.message.reply_text("❌ El ID y la cantidad deben ser números válidos.")
+        return
+
+    exito, nuevo_saldo, username = modificar_creditos(target_id, cantidad, "rem")
+
+    if exito:
+        await update.message.reply_text(
+            f"✅ <b>Créditos removidos con éxito</b>\n\n"
+            f"👤 <b>Usuario:</b> @{username}\n"
+            f"🆔 <b>ID:</b> <code>{target_id}</code>\n"
+            f"➖ <b>Removido:</b> <code>{cantidad:g}</code>\n"
+            f"💳 <b>Nuevo Saldo:</b> <code>{nuevo_saldo:g}</code>",
+            parse_mode="HTML"
+        )
+        # Notificar al usuario objetivo
+        try:
+            await context.bot.send_message(
+                chat_id=target_id,
+                text=(
+                    f"⚠️ <b>SE HAN RETIRADO CRÉDITOS DE TU CUENTA</b>\n\n"
+                    f"👤 <b>Usuario:</b> @{username}\n"
+                    f"🆔 <b>ID:</b> <code>{target_id}</code>\n"
+                    f"➖ <b>Créditos deducidos:</b> <code>{cantidad:g}</code>\n"
+                    f"💳 <b>Saldo total restante:</b> <code>{nuevo_saldo:g}</code>"
+                ),
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+    else:
+        await update.message.reply_text("❌ El ID de usuario no existe en la base de datos.")
 
 
 async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -324,6 +438,11 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("creditos", cmd_creditos))
+    
+    # Comandos de Administrador
+    app.add_handler(CommandHandler("add", cmd_add))
+    app.add_handler(CommandHandler("rem", cmd_rem))
+
     app.add_handler(CallbackQueryHandler(manejar_botones))
     app.add_handler(MessageHandler(filters.Document.ALL, procesar_documento))
 
