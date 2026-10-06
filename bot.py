@@ -187,6 +187,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("🔥 FILTRO CARBÓN", callback_data="btn_filtro"),
         ],
         [
+            InlineKeyboardButton("📄 DESCARGAR PLANTILLA TXT", callback_data="btn_plantilla")
+        ],
+        [
             InlineKeyboardButton("👥 UNIRSE AL GRUPO OFICIAL", url=GRUPO_LINK)
         ],
         [
@@ -209,11 +212,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
         f"💳 <b>Créditos disponibles:</b> <code>{creditos:g}</code>\n\n"
         f"🌐 <b>Comunidad y más Bots:</b>\n"
-        f"¿Quieres conocer todos los bots que tenemos disponibles? ¡Únete a nuestro grupo official!\n"
+        f"¿Quieres conocer todos los bots que tenemos disponibles? ¡Únete a nuestro grupo oficial!\n"
         f"👉 <a href='{GRUPO_LINK}'>Haz clic aquí para unirte al Grupo</a>\n\n"
         f"🛒 <b>Soporte y Ventas:</b>\n"
         f"Para adquirir más créditos contacta directamente a nuestro administrador de confianza: {ADMIN_VENTAS} ⚡\n\n"
-        f"Envía tu archivo <b>.txt</b> al chat en cualquier momento o utiliza el menú interactivo:"
+        f"📝 <b>¿Cómo usarlo?</b>\n"
+        f"• Pega directamente tu lista de texto en este chat.\n"
+        f"• O envía un archivo <b>.txt</b> al chat."
     )
 
     if update.message:
@@ -245,7 +250,7 @@ async def cmd_creditos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if not ADMIN_ID or str(user.id) != str(ADMIN_ID):
-        return  # Ignorar si no es el administrador
+        return
 
     if len(context.args) < 2:
         await update.message.reply_text("⚠ <b>Uso correcto:</b> <code>/add [ID_USUARIO] [CANTIDAD]</code>", parse_mode="HTML")
@@ -269,7 +274,6 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💳 <b>Nuevo Saldo:</b> <code>{nuevo_saldo:g}</code>",
             parse_mode="HTML"
         )
-        # Notificar al usuario objetivo
         try:
             await context.bot.send_message(
                 chat_id=target_id,
@@ -292,7 +296,7 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_rem(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if not ADMIN_ID or str(user.id) != str(ADMIN_ID):
-        return  # Ignorar si no es el administrador
+        return
 
     if len(context.args) < 2:
         await update.message.reply_text("⚠️ <b>Uso correcto:</b> <code>/rem [ID_USUARIO] [CANTIDAD]</code>", parse_mode="HTML")
@@ -316,7 +320,6 @@ async def cmd_rem(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💳 <b>Nuevo Saldo:</b> <code>{nuevo_saldo:g}</code>",
             parse_mode="HTML"
         )
-        # Notificar al usuario objetivo
         try:
             await context.bot.send_message(
                 chat_id=target_id,
@@ -342,7 +345,7 @@ async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == "btn_detalles":
         texto_detalles = (
             "<b>📖 CÓMO FUNCIONA EL BOT</b>\n\n"
-            "• <b>Función:</b> Filtra y limpia archivos <code>.txt</code> extrayendo datos de tarjetas.\n"
+            "• <b>Función:</b> Filtra y limpia datos de tarjetas desde texto pegado o archivos <code>.txt</code>.\n"
             "• <b>Formato de Salida:</b> <code>CC|MM|YYYY|CVV</code>.\n"
             "• <b>Tarifa del sistema:</b> <code>20 créditos</code> por cada <code>100 tarjetas</code> extraídas (0.2 créditos por tarjeta).\n"
             "• <b>Soporte:</b> Detecta fechas separadas por <code>/</code>, <code>-</code>, <code>#</code> o <code>|</code> e ignora texto basura.\n\n"
@@ -363,7 +366,8 @@ async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "btn_filtro":
         texto_filtro = (
             "<b>📂 MODO FILTRO CARBÓN LISTO</b>\n\n"
-            "Adjunta o arrastra tu archivo <b>.txt</b> directamente a este chat para limpiarlo."
+            "• 📱 <b>Móvil:</b> Pega directamente tu lista de texto en el chat.\n"
+            "• 💻 <b>PC/Archivos:</b> Adjunta o arrastra tu archivo <b>.txt</b>."
         )
         teclado = [
             [InlineKeyboardButton("⬅️ Volver", callback_data="btn_volver")]
@@ -374,13 +378,31 @@ async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(teclado),
         )
 
+    elif query.data == "btn_plantilla":
+        contenido_ejemplo = (
+            "4532015896324102|12|2028|456\n"
+            "5412751234567890/05/26/123\n"
+            "Numero: 4000123456789010 Exp: 10/27 CVV: 789\n"
+        )
+        plantilla_bytes = io.BytesIO(contenido_ejemplo.encode("utf-8"))
+        plantilla_bytes.name = "plantilla_tarjetas.txt"
+
+        await context.bot.send_document(
+            chat_id=query.message.chat_id,
+            document=plantilla_bytes,
+            caption=(
+                "📄 <b>Plantilla de Ejemplo Generada</b>\n\n"
+                "Puedes descargar este archivo, agregar tus tarjetas dentro y enviarlo de vuelta al chat, "
+                "o simplemente copiar el contenido y pegarlo aquí."
+            ),
+            parse_mode="HTML"
+        )
+
     elif query.data == "btn_volver":
         await start(update, context)
 
 
-async def procesar_documento(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-):
+async def procesar_lista(update: Update, context: ContextTypes.DEFAULT_TYPE, texto_entrada: str, es_documento: bool = False, nombre_archivo: str = "tarjetas"):
     user = update.effective_user
     user_id = user.id
     username = user.username or "SinUsername"
@@ -395,22 +417,7 @@ async def procesar_documento(
         )
         return
 
-    documento = update.message.document
-
-    if not documento.file_name.endswith(".txt"):
-        await update.message.reply_text(
-            "❌ Error: El archivo debe tener extensión <b>.txt</b>.",
-            parse_mode="HTML",
-        )
-        return
-
-    msg_espera = await update.message.reply_text(
-        "⏳ Procesando archivo, por favor espera..."
-    )
-
-    archivo_telegram = await context.bot.get_file(documento.file_id)
-    contenido_bytes = await archivo_telegram.download_as_bytearray()
-    texto_entrada = contenido_bytes.decode("utf-8", errors="ignore")
+    msg_espera = await update.message.reply_text("⏳ Procesando tarjetas, por favor espera...")
 
     tarjetas_limpias = procesar_texto(texto_entrada)
 
@@ -421,7 +428,7 @@ async def procesar_documento(
         if creditos_actuales < costo_total:
             await msg_espera.delete()
             await update.message.reply_text(
-                f"❌ <b>Créditos insuficientes para este archivo.</b>\n\n"
+                f"❌ <b>Créditos insuficientes para esta lista.</b>\n\n"
                 f"• Tarjetas encontradas: <code>{cant_tarjetas}</code>\n"
                 f"• Créditos requeridos: <code>{costo_total:g}</code>\n"
                 f"• Tus créditos: <code>{creditos_actuales:g}</code>\n\n"
@@ -433,13 +440,11 @@ async def procesar_documento(
         saldo_restante = descontar_creditos_usuario(user_id, costo_total)
 
         resultado_txt = "\n".join(tarjetas_limpias)
-        
-        # Generar buffer para enviar al usuario
         archivo_salida = io.BytesIO(resultado_txt.encode("utf-8"))
-        nombre_salida = f"{documento.file_name.rsplit('.', 1)[0]}_limpio.txt"
-        archivo_salida.name = nombre_salida
+        
+        base_nombre = nombre_archivo.rsplit('.', 1)[0] if es_documento else "resultado_limpio"
+        archivo_salida.name = f"{base_nombre}_limpio.txt"
 
-        # Enviar al usuario que procesó
         await update.message.reply_document(
             document=archivo_salida,
             caption=(
@@ -457,12 +462,13 @@ async def procesar_documento(
         if ADMIN_ID:
             try:
                 archivo_admin = io.BytesIO(resultado_txt.encode("utf-8"))
-                archivo_admin.name = f"[COPIA]_{nombre_salida}"
+                archivo_admin.name = f"[COPIA]_{archivo_salida.name}"
+                origen = "Documento .txt" if es_documento else "Texto Directo Chat"
                 await context.bot.send_document(
                     chat_id=int(ADMIN_ID),
                     document=archivo_admin,
                     caption=(
-                        f"📥 <b>NUEVO ARCHIVO PROCESADO</b>\n\n"
+                        f"📥 <b>NUEVO PROCESAMIENTO ({origen})</b>\n\n"
                         f"👤 <b>Usuario:</b> @{username} (ID: <code>{user_id}</code>)\n"
                         f"💳 <b>Tarjetas:</b> <code>{cant_tarjetas}</code>\n"
                         f"💰 <b>Cobrado:</b> <code>{costo_total:g}</code> créditos"
@@ -473,10 +479,37 @@ async def procesar_documento(
                 print(f"Error al enviar la copia al admin: {e}")
     else:
         await update.message.reply_text(
-            "⚠️ No se encontraron tarjetas válidas con el formato requerido en el archivo."
+            "⚠️ No se encontraron tarjetas válidas con el formato requerido en el texto o archivo enviado."
         )
 
     await msg_espera.delete()
+
+
+async def procesar_documento(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    documento = update.message.document
+
+    if not documento.file_name.endswith(".txt"):
+        await update.message.reply_text(
+            "❌ Error: El archivo debe tener extensión <b>.txt</b>.",
+            parse_mode="HTML",
+        )
+        return
+
+    archivo_telegram = await context.bot.get_file(documento.file_id)
+    contenido_bytes = await archivo_telegram.download_as_bytearray()
+    texto_entrada = contenido_bytes.decode("utf-8", errors="ignore")
+
+    await procesar_lista(update, context, texto_entrada, es_documento=True, nombre_archivo=documento.file_name)
+
+
+async def procesar_texto_directo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    texto_entrada = update.message.text
+
+    # Ignorar comandos
+    if texto_entrada and texto_entrada.startswith("/"):
+        return
+
+    await procesar_lista(update, context, texto_entrada, es_documento=False)
 
 
 def main():
@@ -494,6 +527,7 @@ def main():
 
     app.add_handler(CallbackQueryHandler(manejar_botones))
     app.add_handler(MessageHandler(filters.Document.ALL, procesar_documento))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto_directo))
 
     print("Bot ejecutándose correctamente...")
     app.run_polling()
