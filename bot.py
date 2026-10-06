@@ -21,6 +21,9 @@ os.makedirs(DATA_DIR, exist_ok=True)
 ARCHIVO_USUARIOS = os.path.join(DATA_DIR, "usuarios.txt")
 
 COSTO_POR_TARJETA = 0.2  # 20 créditos por cada 100 tarjetas
+REGALO_BIENVENIDA = 100.0  # Créditos iniciales para usuarios nuevos
+GRUPO_LINK = "https://t.me/+kIN_CgyaWP5lZDUx"
+ADMIN_VENTAS = "@juanper33z"
 
 # Reglas de coincidencia (Regex)
 PATRON_LINEA = re.compile(
@@ -72,18 +75,19 @@ def guardar_usuarios(usuarios):
             f.write(f"{user_id},{datos['username']},{cred_val}\n")
 
 
-def obtener_creditos_usuario(user_id: int, username: str) -> float:
+def obtener_creditos_usuario(user_id: int, username: str) -> tuple[float, bool]:
+    """Obtiene créditos y retorna (creditos, es_nuevo). Regala 100 créditos en el registro."""
     usuarios = cargar_usuarios()
     if user_id in usuarios:
         if username and usuarios[user_id]["username"] != username:
             usuarios[user_id]["username"] = username
             guardar_usuarios(usuarios)
-        return usuarios[user_id]["creditos"]
+        return usuarios[user_id]["creditos"], False
     else:
         nombre_user = username if username else "SinUsername"
-        usuarios[user_id] = {"username": nombre_user, "creditos": 0.0}
+        usuarios[user_id] = {"username": nombre_user, "creditos": REGALO_BIENVENIDA}
         guardar_usuarios(usuarios)
-        return 0.0
+        return REGALO_BIENVENIDA, True
 
 
 def descontar_creditos_usuario(user_id: int, cantidad: float) -> float:
@@ -158,42 +162,80 @@ def procesar_texto(texto: str) -> list[str]:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    creditos = obtener_creditos_usuario(user.id, user.username or "SinUsername")
+    username_str = user.username if user.username else "SinUsername"
+    creditos, es_nuevo = obtener_creditos_usuario(user.id, username_str)
+
+    # Notificar al Administrador si se registra un nuevo usuario
+    if es_nuevo and ADMIN_ID:
+        try:
+            await context.bot.send_message(
+                chat_id=int(ADMIN_ID),
+                text=(
+                    f"🔔 <b>¡NUEVO USUARIO REGISTRADO!</b>\n\n"
+                    f"👤 <b>Usuario:</b> @{username_str}\n"
+                    f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
+                    f"🎁 <b>Bono asignado:</b> <code>{REGALO_BIENVENIDA:g}</code> créditos"
+                ),
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            print(f"Error al notificar al admin: {e}")
 
     teclado = [
         [
             InlineKeyboardButton("ℹ️ DETALLES", callback_data="btn_detalles"),
             InlineKeyboardButton("🔥 FILTRO CARBÓN", callback_data="btn_filtro"),
+        ],
+        [
+            InlineKeyboardButton("👥 UNIRSE AL GRUPO OFICIAL", url=GRUPO_LINK)
+        ],
+        [
+            InlineKeyboardButton("💎 COMPRAR CRÉDITOS", url=f"https://t.me/{ADMIN_VENTAS.replace('@', '')}")
         ]
     ]
     reply_markup = InlineKeyboardMarkup(teclado)
 
+    if es_nuevo:
+        encabezado = (
+            f"🎁 <b>¡Gracias por registrarte!</b>\n"
+            f"Te hemos regalado <b>{REGALO_BIENVENIDA:g} créditos</b> para que pruebes nuestro servicio totalmente gratis.\n\n"
+        )
+    else:
+        encabezado = "<b>¡Bienvenido de nuevo al Bot Limpiador de Tarjetas!</b> 🤖\n\n"
+
     mensaje = (
-        f"<b>¡Bienvenido al Bot Limpiador de Tarjetas!</b> 🤖\n\n"
-        f"👤 <b>Usuario:</b> @{user.username if user.username else 'SinUsername'}\n"
+        f"{encabezado}"
+        f"👤 <b>Usuario:</b> @{username_str}\n"
         f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
         f"💳 <b>Créditos disponibles:</b> <code>{creditos:g}</code>\n\n"
-        f"Puedes enviar tu archivo <b>.txt</b> directamente al chat en cualquier momento, "
-        f"o usar el menú interactivo:"
+        f"🌐 <b>Comunidad y más Bots:</b>\n"
+        f"¿Quieres conocer todos los bots que tenemos disponibles? ¡Únete a nuestro grupo official!\n"
+        f"👉 <a href='{GRUPO_LINK}'>Haz clic aquí para unirte al Grupo</a>\n\n"
+        f"🛒 <b>Soporte y Ventas:</b>\n"
+        f"Para adquirir más créditos contacta directamente a nuestro administrador de confianza: {ADMIN_VENTAS} ⚡\n\n"
+        f"Envía tu archivo <b>.txt</b> al chat en cualquier momento o utiliza el menú interactivo:"
     )
 
     if update.message:
         await update.message.reply_text(
-            mensaje, parse_mode="HTML", reply_markup=reply_markup
+            mensaje, parse_mode="HTML", reply_markup=reply_markup, disable_web_page_preview=True
         )
     elif update.callback_query:
         await update.callback_query.edit_message_text(
-            mensaje, parse_mode="HTML", reply_markup=reply_markup
+            mensaje, parse_mode="HTML", reply_markup=reply_markup, disable_web_page_preview=True
         )
 
 
 async def cmd_creditos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    creditos = obtener_creditos_usuario(user.id, user.username or "SinUsername")
+    username_str = user.username if user.username else "SinUsername"
+    creditos, _ = obtener_creditos_usuario(user.id, username_str)
+    
     await update.message.reply_text(
-        f"👤 <b>Usuario:</b> @{user.username if user.username else 'SinUsername'}\n"
+        f"👤 <b>Usuario:</b> @{username_str}\n"
         f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
-        f"💳 <b>Tus créditos actuales:</b> <code>{creditos:g}</code>",
+        f"💳 <b>Tus créditos actuales:</b> <code>{creditos:g}</code>\n\n"
+        f"🛒 Si deseas recargar más créditos, contacta a {ADMIN_VENTAS} ⭐",
         parse_mode="HTML",
     )
 
@@ -206,7 +248,7 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return  # Ignorar si no es el administrador
 
     if len(context.args) < 2:
-        await update.message.reply_text("⚠️️ <b>Uso correcto:</b> <code>/add [ID_USUARIO] [CANTIDAD]</code>", parse_mode="HTML")
+        await update.message.reply_text("⚠ <b>Uso correcto:</b> <code>/add [ID_USUARIO] [CANTIDAD]</code>", parse_mode="HTML")
         return
 
     try:
@@ -236,7 +278,8 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"👤 <b>Usuario:</b> @{username}\n"
                     f"🆔 <b>ID:</b> <code>{target_id}</code>\n"
                     f"➕ <b>Créditos recibidos:</b> <code>{cantidad:g}</code>\n"
-                    f"💳 <b>Saldo total disponible:</b> <code>{nuevo_saldo:g}</code>"
+                    f"💳 <b>Saldo total disponible:</b> <code>{nuevo_saldo:g}</code>\n\n"
+                    f"¡Gracias por confiar en nosotros! 🚀"
                 ),
                 parse_mode="HTML"
             )
@@ -303,7 +346,9 @@ async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• <b>Formato de Salida:</b> <code>CC|MM|YYYY|CVV</code>.\n"
             "• <b>Tarifa del sistema:</b> <code>20 créditos</code> por cada <code>100 tarjetas</code> extraídas (0.2 créditos por tarjeta).\n"
             "• <b>Soporte:</b> Detecta fechas separadas por <code>/</code>, <code>-</code>, <code>#</code> o <code>|</code> e ignora texto basura.\n\n"
-            "<b>Uso directo:</b> Solo adjunta tu archivo <code>.txt</code> al chat en cualquier momento."
+            f"💬 <b>¿Quieres saber qué más bots tenemos?</b>\n"
+            f"Únete a nuestro grupo exclusivo: <a href='{GRUPO_LINK}'>Entrar al Grupo</a>\n\n"
+            f"🛒 <b>Compra de créditos:</b> {ADMIN_VENTAS}"
         )
         teclado = [
             [InlineKeyboardButton("⬅️ Volver", callback_data="btn_volver")]
@@ -312,6 +357,7 @@ async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
             texto_detalles,
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(teclado),
+            disable_web_page_preview=True
         )
 
     elif query.data == "btn_filtro":
@@ -339,11 +385,12 @@ async def procesar_documento(
     user_id = user.id
     username = user.username or "SinUsername"
 
-    creditos_actuales = obtener_creditos_usuario(user_id, username)
+    creditos_actuales, _ = obtener_creditos_usuario(user_id, username)
     if creditos_actuales <= 0:
         await update.message.reply_text(
-            "❌ <b>Créditos insuficientes.</b>\n"
-            "No tienes créditos disponibles para realizar esta operación. Contacta al administrador para recargar.",
+            f"❌ <b>Créditos insuficientes.</b>\n\n"
+            f"No tienes créditos disponibles para realizar esta operación.\n"
+            f"⭐ Contacta a nuestro administrador oficial {ADMIN_VENTAS} para recargar créditos al mejor precio.",
             parse_mode="HTML",
         )
         return
@@ -378,7 +425,7 @@ async def procesar_documento(
                 f"• Tarjetas encontradas: <code>{cant_tarjetas}</code>\n"
                 f"• Créditos requeridos: <code>{costo_total:g}</code>\n"
                 f"• Tus créditos: <code>{creditos_actuales:g}</code>\n\n"
-                f"Recarga más créditos para procesar este archivo.",
+                f"🛒 Adquiere un paquete de créditos contactando a {ADMIN_VENTAS}.",
                 parse_mode="HTML",
             )
             return
@@ -399,7 +446,9 @@ async def procesar_documento(
                 f"✅ <b>PROCESAMIENTO FINALIZADO</b>\n\n"
                 f"• Tarjetas extraídas: <code>{cant_tarjetas}</code>\n"
                 f"• Créditos cobrados: <code>{costo_total:g}</code>\n"
-                f"• Créditos restantes: <code>{saldo_restante:g}</code>"
+                f"• Créditos restantes: <code>{saldo_restante:g}</code>\n\n"
+                f"💬 Recuerda unirte a nuestro grupo: <a href='{GRUPO_LINK}'>Comunidad Oficial</a>\n"
+                f"⭐ Adquiere más créditos con: {ADMIN_VENTAS}"
             ),
             parse_mode="HTML",
         )
